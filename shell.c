@@ -45,13 +45,13 @@ char** readInput(int* length) {
 int main() {
 
     while(1) {
-        printf(">");
+        printf("> ");
         int length = 0;
         char** args = readInput(&length);
         for(int i = 0; i < length; i++) {
             printf("%s ", args[i]);
         }
         printf("\n");
-        break;
+        
     }    
 }
