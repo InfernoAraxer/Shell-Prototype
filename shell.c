@@ -2,7 +2,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-char** readInput(int* length) {
+/*
+    Reads user input, ignoring whitespace from user.
+    Returns an array of strings.
+    Last element in array is a NULL pointer because execv expects this.
+    Length parameter is actually 1 less than the real length of array,
+    i.e. this is the length if you do not count the NULL pointer
+    (makes printing look nicer)
+*/
+char** readInput(int* length) { 
     char** args = malloc(sizeof(char *));
     int i = 0;
     char c;
