@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
 /*
     Reads user input, ignoring whitespace from user.
@@ -48,10 +51,12 @@ int main() {
         printf("> ");
         int length = 0;
         char** args = readInput(&length);
-        for(int i = 0; i < length; i++) {
-            printf("%s ", args[i]);
+        pid_t pid;
+        if ((pid = fork()) == 0) {
+            execv(args[0], args);
         }
-        printf("\n");
-        
+        else {
+            wait(NULL);  
+        }
     }    
 }
