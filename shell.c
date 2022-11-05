@@ -4,6 +4,21 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <signal.h>
+#include <errno.h>
+#include <unistd.h>
+
+/*
+
+*/
+void sighandler(int signum) {
+    switch (signum) {
+        case 2:
+        exit();
+        
+    }
+}
+
 
 /*
     Reads user input, ignoring whitespace from user.
@@ -45,18 +60,37 @@ char** readInput(int* length) {
     }
 }
 
-int main() {
+int background(char** args, int length) {
+    if (args[length - 1][0] == '&') {
+        args[length - 1] = NULL;
+        return 1;
+    }
+    return 0;
+}
 
+int main() {
+    signal(SIGINT, sighandler);
+    int i = 1;
+    pid_t* pid = malloc(sizeof(pid_t));
     while(1) {
         printf("> ");
         int length = 0;
+        int status;
+        pid_t tempPid;
         char** args = readInput(&length);
-        pid_t pid;
-        if ((pid = fork()) == 0) {
+        int bg = background(args, length);
+        if ((tempPid = fork()) == 0) {
             execv(args[0], args);
+            exit(status);
+        }
+        pid[i-1] = tempPid;
+        if (!bg) {
+            waitpid(tempPid, &status, 0);
         }
         else {
-            wait(NULL);  
+            printf("[%d] %d\n", i, tempPid);
         }
+        i++;
+        pid = realloc(pid, i * sizeof(pid_t));
     }    
 }
