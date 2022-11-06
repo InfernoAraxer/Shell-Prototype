@@ -90,7 +90,7 @@ int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
     bool fileFound = false;
 	dir = readdir(dirp);
 	while(dir != NULL){
-		if(strstr(dir->d_name, key) && dir->d_name[0] != '.'){
+		if(strcmp(dir->d_name, key) == 0 && dir->d_name[0] != '.'){
             int rootLength = strlen(root);
 			char* temp = malloc(sizeof(char) * 256);
 			int i = 0;
@@ -105,7 +105,6 @@ int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
 				temp[i] = dir->d_name[i - rootLength];
 				i++;
 			}
-            temp[i++] = '/';
 			temp[i] = '\0';
             *updatedPath = temp;
 		}
@@ -172,7 +171,10 @@ int findFileOrCommand(char** path, char** updatedPath) {
         //update return;
         return 0;
     } else if (path[0][0] == '.') {
-        path[0] = &(path[0][1]);
+        updatedPath[0] = &(path[0][1]);
+        return 1;
+    } else if (path[0][0] == '/') {
+        updatedPath[0] = *path;
         return 1;
     }
     return 0;
@@ -212,7 +214,7 @@ void executeChildProcess(char* args, char** argsList) {
                 printf("%s: command not found\n", args);
             }
         } else {
-            printf("%s %s\n", *path, *updatedPath);
+            // printf("%s %s\n", args, foundPath);
             execv(foundPath, argsList);
         }
     }
