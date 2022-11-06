@@ -10,22 +10,25 @@
 #include <dirent.h>
 #include <stdbool.h>
 
+// Structure available to navigate files in the /usr/bin/ and /bin/ folders
 struct dirent* dir;
 
-/*
-
-*/
-
+// Repeatedly handles Ctrl+Z and Ctrl+C Inputs
+    // We will have to update the functions so they will be able to terminate
+    // jobs that are in the fore/background.
 void sigHandler(int signum) {
     signal(SIGINT, sigHandler);
     signal(SIGTSTP, sigHandler);
 
     switch (signum) {
-        //SIGINT
+        //SIGINT = Case 2
         case 2:
+            // Method to send SIGINT to all Forground jobs and its child processes
             break;
-        //SIGTSTP
+        //SIGTSTP = Case 20;
         case 20:
+            // Implement method to send SIGTSTP to all forgound jobs and its child
+            // processes.
             break;
         default:
             break;
@@ -33,7 +36,6 @@ void sigHandler(int signum) {
     }
     // return 0;
 }
-
 
 /*
     Reads user input, ignoring whitespace from user.
@@ -85,11 +87,14 @@ int background(char** args, int length) {
     return 0;
 }
 
+// Remy's Recursive Function to find file or command
 int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
-	errno = 0;
+	// fileFound is to know to use the updated path with the file if a command is found
+    errno = 0;
     bool fileFound = false;
 	dir = readdir(dirp);
 	while(dir != NULL){
+        // This 'if' updated the 'updatedPath' with the location of the exact system method.
 		if(strcmp(dir->d_name, key) == 0 && dir->d_name[0] != '.'){
             int rootLength = strlen(root);
 			char* temp = malloc(sizeof(char) * 256);
@@ -108,6 +113,8 @@ int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
 			temp[i] = '\0';
             *updatedPath = temp;
 		}
+
+        // Recursive Portion to look within directories of the bins
 		if(dir->d_name[0] != '.' && dir->d_type == 4){
 			int rootLength = strlen(root);
 			char* temp = malloc(sizeof(char) * 256);
@@ -139,6 +146,7 @@ int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
 		printf("error!");
 	}
 
+    // Returns whether a file has been found or not
     if (fileFound) {
         return 0;
     } else {
@@ -146,40 +154,43 @@ int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
     }
 }
 
+//Attempts to Find the Command or File given by user
 int findFileOrCommand(char** path, char** updatedPath) {
-    // printf("%s %s\n", *path, *updatedPath);
+        // printf("%s %s\n", *path, *updatedPath);
+    // Looks within /usr/bin/ for the command or file
     if (path[0][0] != '.' && path[0][0] != '/') {
         char* filepath = "/usr/bin/";
         DIR* dirp = opendir(filepath);
         if (!printDirs(dirp, filepath, path[0], updatedPath)) {
             closedir(dirp);
-            return 1;
+            return 0;
         } else {
             closedir(dirp);
         }
-    // printf("%s %s\n", *path, *updatedPath);
 
+        // printf("%s %s\n", *path, *updatedPath);
+    // Looks within /bin/ for the command or file
         filepath = "/bin/";
         dirp = opendir(filepath);
         if (!printDirs(dirp, filepath, path[0], updatedPath)) {
             closedir(dirp);
-            return 1;
+            return 0;
         } else {
             closedir(dirp);
         }
-    // printf("%s %s\n", *path, *updatedPath);
-        //update return;
-        return 0;
+        return 1;
     } else if (path[0][0] == '.') {
         updatedPath[0] = &(path[0][1]);
-        return 1;
+        return 0;
     } else if (path[0][0] == '/') {
         updatedPath[0] = *path;
-        return 1;
+        return 0;
     }
-    return 0;
+    // Shouldn't reach here, but extra case
+    return 1;
 }
 
+// Lists the various processes that we have to implement
 void executeChildProcess(char* args, char** argsList) {
     if (strcmp(args, "bg") == 0) {
         // Input bg <jobID>: Run a suspended job in the background
@@ -194,7 +205,7 @@ void executeChildProcess(char* args, char** argsList) {
         // exit: Exit the shell. The shell should also exit if the user hits ctrl-d on
         //       on an empty input line. When the shell exist, it should first send SIGHUP
         //       followed by SIGCONT to any stopped jobs, and SIGHUP to any running jobs.
-        
+        printf("\n");
     } else if (strcmp(args, "fg") == 0) {
         // fg <jobID>L Run a suspended or background job in the foreground
 
@@ -206,20 +217,22 @@ void executeChildProcess(char* args, char** argsList) {
         // kill <jobID>: Send SIGTERM to the given job.
 
     } else {
+        // Prints the various error outputs if file or command isn't found 
         char* foundPath = NULL;
-        if (findFileOrCommand(&args, &foundPath) == 0) {
+        if (findFileOrCommand(&args, &foundPath) != 0 && args[0] != '\0') {
             if (args[0] == '.' || args[0] == '/') {
                 printf("%s: No such file or directory\n", args);
             } else {
                 printf("%s: command not found\n", args);
             }
-        } else {
+        } else if (args[0] != '\0') {
             // printf("%s %s\n", args, foundPath);
             execv(foundPath, argsList);
         }
     }
 }
 
+// Main
 int main() {
     signal(SIGINT, sigHandler);
     signal(SIGTSTP, sigHandler);
@@ -232,14 +245,13 @@ int main() {
         int bg = 0;
         pid_t tempPid;
         char** args = readInput(&length);
+        // Determines if Process will run in the background
         if (length > 1 && args[0] != NULL) {
             bg = background(args, length);
         }
+
+        // Forks to run the program
         if ((tempPid = fork()) == 0) {
-            // for (int i = 0; i < length; i++) {
-            //     printf("%s  ", args[i]);
-            // }
-            // printf("%s  %d   ", args[0], length);
             executeChildProcess(args[0], args);
             exit(status);
             pid[i-1] = tempPid;   
