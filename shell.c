@@ -13,6 +13,14 @@
 // Structure available to navigate files in the /usr/bin/ and /bin/ folders
 struct dirent* dir;
 
+typedef struct job job;
+struct job{
+	pid_t pid;
+	int status; //1 for Running, 2 for Stopped, 3 for Terminated
+	char** command;
+	job* next;
+};
+
 // Repeatedly handles Ctrl+Z and Ctrl+C Inputs
     // We will have to update the functions so they will be able to terminate
     // jobs that are in the fore/background.
@@ -50,6 +58,7 @@ char** readInput(int* length) {
     int i = 0;
     char c;
     while(!feof(stdin)) {
+		*length = i;
         int j = 2;
         args[i] = malloc(j * sizeof(char));
         scanf("%c", &c);
@@ -87,10 +96,25 @@ int background(char** args, int length) {
     return 0;
 }
 
+//Status Key
+char* getStatus(int key){
+	switch (key){
+	case 1:
+		return "Running";
+		break;
+	case 2:
+		return "Stopped";
+	case 3:
+		return "Terminated";
+	default:
+		return "Invalid Status";
+		break;
+	}
+}
+
 // Remy's Recursive Function to find file or command
 int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
 	// fileFound is to know to use the updated path with the file if a command is found
-    errno = 0;
     bool fileFound = false;
 	dir = readdir(dirp);
 	while(dir != NULL){
@@ -142,9 +166,6 @@ int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
 		}
 		dir = readdir(dirp);
 	}
-	if(errno){
-		printf("error!");
-	}
 
     // Returns whether a file has been found or not
     if (fileFound) {
@@ -191,7 +212,7 @@ int findFileOrCommand(char** path, char** updatedPath) {
 }
 
 // Lists the various processes that we have to implement
-void executeChildProcess(char* args, char** argsList) {
+void executeChildProcess(char* args, char** argsList, job** jobList) {
     if (strcmp(args, "bg") == 0) {
         // Input bg <jobID>: Run a suspended job in the background
 
@@ -212,6 +233,18 @@ void executeChildProcess(char* args, char** argsList) {
     } else if (strcmp(args, "jobs") == 0) {
         // jobs: List current jobs, including their jobID, processID, current status, and
         //       command. If no jobs exist, this should print nothing.
+        printf("we got to jobs!");
+		job* ptr = *jobList;
+		int i = 1;
+		while(ptr != NULL){
+			printf("[%d] %d %s", i, ptr->pid, getStatus(ptr->status));
+            int j = 0;
+            while(ptr->command[j][0] != '\0'){
+                printf("%s ", ptr->command[j]);
+                j++;
+            }
+            i++;
+		}
 
     } else if (strcmp(args, "kill") == 0) {
         // kill <jobID>: Send SIGTERM to the given job.
@@ -226,8 +259,27 @@ void executeChildProcess(char* args, char** argsList) {
                 printf("%s: command not found\n", args);
             }
         } else if (args[0] != '\0') {
-            // printf("%s %s\n", args, foundPath);
-            execv(foundPath, argsList);
+            //printf("%s %s\n", args, foundPath);
+            pid_t pid;
+            if((pid = fork()) == 0){
+                execv(foundPath, argsList);
+            }
+            else{
+                job* newJob = malloc(sizeof(job));
+                newJob->pid = pid;
+                newJob->status = 1;
+                newJob->command = argsList;
+                if(jobList == NULL){
+                    *jobList = newJob;
+                }
+                else{
+                    job* ptr = *jobList;
+                    while(ptr->next != NULL){
+                        ptr = ptr->next;
+                    }
+                    ptr->next = newJob;
+                }
+            }
         }
     }
 }
@@ -238,6 +290,7 @@ int main() {
     signal(SIGTSTP, sigHandler);
     int i = 1;
     pid_t* pid = malloc(sizeof(pid_t));
+    job* jobList = malloc(sizeof(job));
     while(!feof(stdin)) {
         printf("> ");
         int length = 0;
@@ -246,13 +299,14 @@ int main() {
         pid_t tempPid;
         char** args = readInput(&length);
         // Determines if Process will run in the background
-        if (length > 1 && args[0] != NULL) {
+        if (length > 0 && args[0] != NULL) {
             bg = background(args, length);
         }
 
         // Forks to run the program
         if ((tempPid = fork()) == 0) {
-            executeChildProcess(args[0], args);
+            printf("%s", args[0]);
+            executeChildProcess(args[0], args, &jobList);
             exit(status);
             pid[i-1] = tempPid;   
         }
@@ -268,7 +322,7 @@ int main() {
         i++;
         pid = realloc(pid, i * sizeof(pid_t));
         if (feof(stdin)) {
-            executeChildProcess("exit", args);
+            executeChildProcess("exit", args, &jobList);
         }
     }    
     return 0;
