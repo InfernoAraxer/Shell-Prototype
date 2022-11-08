@@ -179,7 +179,7 @@ int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
 int findFileOrCommand(char** path, char** updatedPath) {
         // printf("%s %s\n", *path, *updatedPath);
     // Looks within /usr/bin/ for the command or file
-    if (path[0][0] != '.' && path[0][0] != '/') {
+    if (path[0][0] != '.' || path[0][0] != '/') {
         char* filepath = "/usr/bin/";
         DIR* dirp = opendir(filepath);
         if (!printDirs(dirp, filepath, path[0], updatedPath)) {
@@ -204,8 +204,17 @@ int findFileOrCommand(char** path, char** updatedPath) {
         updatedPath[0] = &(path[0][1]);
         return 0;
     } else if (path[0][0] == '/') {
-        updatedPath[0] = *path;
-        return 0;
+		char* filepath = *path;
+        DIR* dirp = opendir(filepath);
+        if (printDirs(dirp, filepath, path[0], updatedPath) == 0) {
+            // printf("%s \n", updatedPath[0]);
+			closedir(dirp);
+            return 0;
+        } else {
+            closedir(dirp);
+			return 1;
+        }
+        // return 0;
     }
     // Shouldn't reach here, but extra case
     return 1;
@@ -233,6 +242,7 @@ void executeChildProcess(char* args, char** argsList, job** jobList) {
     } else if (strcmp(args, "jobs") == 0) {
         // jobs: List current jobs, including their jobID, processID, current status, and
         //       command. If no jobs exist, this should print nothing.
+		fflush(stdout);
         printf("we got to jobs!");
 		job* ptr = *jobList;
 		int i = 1;
@@ -260,13 +270,10 @@ void executeChildProcess(char* args, char** argsList, job** jobList) {
             }
         } else if (args[0] != '\0') {
             //printf("%s %s\n", args, foundPath);
-            pid_t pid;
-            if((pid = fork()) == 0){
-                execv(foundPath, argsList);
-            }
-            else{
+            // pid_t pid;
+				execv(foundPath, argsList);
                 job* newJob = malloc(sizeof(job));
-                newJob->pid = pid;
+                // newJob->pid = pid;
                 newJob->status = 1;
                 newJob->command = argsList;
                 if(jobList == NULL){
@@ -279,7 +286,6 @@ void executeChildProcess(char* args, char** argsList, job** jobList) {
                     }
                     ptr->next = newJob;
                 }
-            }
         }
     }
 }
@@ -305,7 +311,7 @@ int main() {
 
         // Forks to run the program
         if ((tempPid = fork()) == 0) {
-            printf("%s", args[0]);
+            // printf("%s", args[0]);
             executeChildProcess(args[0], args, &jobList);
             exit(status);
             pid[i-1] = tempPid;   
