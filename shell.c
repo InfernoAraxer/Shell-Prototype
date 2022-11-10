@@ -179,7 +179,7 @@ int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
 int findFileOrCommand(char** path, char** updatedPath) {
         // printf("%s %s\n", *path, *updatedPath);
     // Looks within /usr/bin/ for the command or file
-    if (path[0][0] != '.' || path[0][0] != '/') {
+    if (path[0][0] != '.' && path[0][0] != '/') {
         char* filepath = "/usr/bin/";
         DIR* dirp = opendir(filepath);
         if (!printDirs(dirp, filepath, path[0], updatedPath)) {
