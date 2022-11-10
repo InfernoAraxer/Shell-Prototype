@@ -52,40 +52,46 @@ void sigHandler(int signum) {
     Length parameter is actually 1 less than the real length of array,
     i.e. this is the length if you do not count the NULL pointer
     (makes printing look nicer)
+
+    Update for all cases with spaces
 */
 char** readInput(int* length) { 
     char** args = malloc(sizeof(char *));
     int i = 0;
     char c;
+    int status;
+    bool foundArgs = false;
     while(!feof(stdin)) {
 		*length = i;
         int j = 2;
+        args = realloc(args, (i+1) * sizeof(char *));
         args[i] = malloc(j * sizeof(char));
-        scanf("%c", &c);
-        if (c == '\n' && !feof(stdin)) {
+        if ((status = scanf("%c", &c)) == EOF && foundArgs == false) {            
+            free(args[i]);
             args[i] = NULL;
+            // free(args);
             *length = i;
             return args;
         }
-        while (c == ' ' && !feof(stdin)) {
-            scanf("%c", &c);
+
+        while (c == ' ' && status != 0) {
+            status = scanf("%c", &c);
         }
-        while(c != ' ' && c != '\n' && !feof(stdin)) {
+
+        while(c != ' ' && c != '\n' && !feof(stdin) && status != 0) {
+            foundArgs = true;
             args[i] = realloc(args[i], j * sizeof(char));
             args[i][j-2] = c;            
             args[i][j-1] = '\0';
             j++;
-            // printf("%ld ", strlen(args[1 ]));
-            scanf("%c", &c);
+            status = scanf("%c", &c);
         }
-        i++;
-        args = realloc(args, (i+1) * sizeof(char *));
-        if (c == '\n' && !feof(stdin)) {
-            free(args[i]);
-            args[i] = NULL;
-            *length = i;
+        if (status == 1 && foundArgs) {
+            *length = i + 1;
+            // printf("ok. ");
             return args;
         }
+        i++;
     }
     return args;
 }
@@ -138,33 +144,6 @@ int printDirs(DIR* dirp, char* root, char* key, char** updatedPath){
 			}
 			temp[i] = '\0';
             *updatedPath = temp;
-		}
-
-        // Recursive Portion to look within directories of the bins
-		if(dir->d_name[0] != '.' && dir->d_type == 4){
-			int rootLength = strlen(root);
-			char* temp = malloc(sizeof(char) * 256);
-			int i = 0;
-			
-			while(root[i] != '\0'){
-				temp[i] = root[i];
-				i++;
-			}
-
-			while(dir->d_name[i - rootLength] != '\0'){
-				temp[i] = dir->d_name[i - rootLength];
-				i++;
-			}
-			
-			temp[i++] = '/';
-			temp[i] = '\0';
-
-			DIR* newDir = opendir(temp);
-			if (printDirs(newDir, temp, key, updatedPath) == 1 || fileFound) {
-                fileFound = true;
-            }
-			closedir(newDir);
-			free(temp);
 		}
 		dir = readdir(dirp);
 	}
@@ -223,7 +202,7 @@ int findFileOrCommand(char** path, char** updatedPath) {
 }
 
 // Lists the various processes that we have to implement
-void executeChildProcess(char* args, char** argsList, job** jobList, int** pipefd) {
+void executeChildProcess(char* args, char** argsList, int** pipefd) {
     // printf("%d", strcmp(args, "jobs"));
     close(pipefd[0][0]);              /* Close unused read end */
 
@@ -240,15 +219,13 @@ void executeChildProcess(char* args, char** argsList, job** jobList, int** pipef
         // exit: Exit the shell. The shell should also exit if the user hits ctrl-d on
         //       on an empty input line. When the shell exist, it should first send SIGHUP
         //       followed by SIGCONT to any stopped jobs, and SIGHUP to any running jobs.
-        printf("\n");
+        return;
     } else if (strcmp(args, "fg") == 0) {
         // fg <jobID>L Run a suspended or background job in the foreground
 
     } else if (!strcmp(args, "jobs")) {
         // jobs: List current jobs, including their jobID, processID, current status, and
         //       command. If no jobs exist, this should print nothing.
-
-
 
 		fflush(stdout);
 
@@ -259,23 +236,9 @@ void executeChildProcess(char* args, char** argsList, job** jobList, int** pipef
         // }
         // write(STDOUT_FILENO, "\n\n", 2);
 
-        job* ptr = *jobList;
-		int i = 1;
-		while(ptr != NULL){
-
-			printf("[%d] %d %s\n", i, ptr->pid, getStatus(ptr->status));                // CHange how we number this later
-
-            int j = 0;
-            while(ptr->command[j][0] != '\0'){
-                printf("%s ", ptr->command[j]);
-                j++;
-            }
-            i++;
-		}
-
     } else if (strcmp(args, "kill") == 0) {
         // kill <jobID>: Send SIGTERM to the given job.
-
+ 
     } else {
         // Prints the various error outputs if file or command isn't found 
         char* foundPath = NULL;
@@ -299,7 +262,7 @@ int main() {
     signal(SIGINT, sigHandler);
     signal(SIGTSTP, sigHandler);
     int i = 1;
-    pid_t* pid = malloc(sizeof(pid_t));
+    // pid_t* pid = malloc(sizeof(pid_t));
     job* jobList = malloc(sizeof(job));
     jobList->status = 0;
     int* pipefd = malloc(2 * sizeof(int));                          // Consider Errors later
@@ -309,21 +272,29 @@ int main() {
         int status = 0;
         int bg = 0;
         pid_t tempPid;
-        char** args = readInput(&length);
+        char** args;
+        if (!feof(stdin)) {
+            args = readInput(&length);
+        }
         // Determines if Process will run in the background
         if (length > 0 && args[0] != NULL) {
             bg = background(args, length);
         }
 
         // Forks to run the program and print program information, Also consider if people use commands incorrectly
-        pipe(pipefd);
-        if ((tempPid = fork()) == 0) {
-            executeChildProcess(args[0], args, &jobList, &pipefd);
+        if (pipe(pipefd) == -1) {
+            fprintf(stderr, "%s", "The call to pipe() has failed.\n");           
+            exit(EXIT_FAILURE);
+        }
+        // printf("lmao ");
+        // printf("%s  ", args[0]);
+        if (!feof(stdin) && length > 0 && (tempPid = fork()) == 0) {
+            executeChildProcess(args[0], args, &pipefd);
             exit(status);
         } else {
             close(pipefd[1]);              /* Closing write. */
-            char* createdProcess = malloc(1);
-            read(pipefd[0], createdProcess, 1);
+            char* createdProcess = malloc(2);
+            read(pipefd[0], createdProcess, 2);
             if (!strcmp(createdProcess, "0")) {
                 job* newJob = malloc(sizeof(job));
                 newJob->status = 1;
@@ -331,7 +302,7 @@ int main() {
                 newJob->next = NULL;
                 newJob->pid = tempPid;
                 i = 1;
-                if (jobList->pid == 0) {
+                if (jobList->status == 0) {
                     printf("[%d] %d %s %s\n", i, newJob->pid, getStatus(newJob->status), newJob->command[0]);
                     newJob->next = jobList;
                     jobList = newJob;
@@ -339,7 +310,7 @@ int main() {
                 else {
                     job* ptr = jobList;
                     i++;
-                    while(ptr->next->pid != 0){
+                    while(ptr->next->status != 0){
                         ptr = ptr->next;
                         i++;
                     }
@@ -348,7 +319,7 @@ int main() {
                     printf("[%d] %d %s %s\n", i, newJob->pid, getStatus(newJob->status), newJob->command[0]);
                 }
             }
-
+            free(createdProcess);
             close(pipefd[0]);              /* Close unused read end */
         }
 
@@ -361,11 +332,23 @@ int main() {
         }
             
         i++;
-        pid = realloc(pid, i * sizeof(pid_t));
+        // pid = realloc(pid, i * sizeof(pid_t));
         if (feof(stdin)) {
-            executeChildProcess("exit", args, &jobList, &pipefd);
+            executeChildProcess("exit", args, &pipefd);
         }
-        // free(pipefd);
+
+        for (int i = 0; i < length; i++) {
+            free(args[i]);
+        }
+        free(args);
     }    
+    free(pipefd);
+    job* temp = jobList;
+    while (jobList->status != 0) {
+        temp = temp->next;
+        free(jobList);
+        jobList = temp;
+    }
+    free(jobList);
     return 0;
 }
