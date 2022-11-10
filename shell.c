@@ -71,9 +71,11 @@ char** readInput(int* length) {
             scanf("%c", &c);
         }
         while(c != ' ' && c != '\n' && !feof(stdin)) {
-            args[i][j-2] = c;
-            j++;
             args[i] = realloc(args[i], j * sizeof(char));
+            args[i][j-2] = c;            
+            args[i][j-1] = '\0';
+            j++;
+            // printf("%ld ", strlen(args[1 ]));
             scanf("%c", &c);
         }
         i++;
@@ -221,7 +223,10 @@ int findFileOrCommand(char** path, char** updatedPath) {
 }
 
 // Lists the various processes that we have to implement
-void executeChildProcess(char* args, char** argsList, job** jobList) {
+void executeChildProcess(char* args, char** argsList, job** jobList, int** pipefd) {
+    // printf("%d", strcmp(args, "jobs"));
+    close(pipefd[0][0]);              /* Close unused read end */
+
     if (strcmp(args, "bg") == 0) {
         // Input bg <jobID>: Run a suspended job in the background
 
@@ -239,15 +244,27 @@ void executeChildProcess(char* args, char** argsList, job** jobList) {
     } else if (strcmp(args, "fg") == 0) {
         // fg <jobID>L Run a suspended or background job in the foreground
 
-    } else if (strcmp(args, "jobs") == 0) {
+    } else if (!strcmp(args, "jobs")) {
         // jobs: List current jobs, including their jobID, processID, current status, and
         //       command. If no jobs exist, this should print nothing.
+
+
+
 		fflush(stdout);
-        printf("we got to jobs!");
-		job* ptr = *jobList;
+
+        // printf("I am the child.\n");
+        // printf("The child is about to read from the pipe.\n");
+        // while (read(pipefd[0], &buf, 1) > 0){
+        //     
+        // }
+        // write(STDOUT_FILENO, "\n\n", 2);
+
+        job* ptr = *jobList;
 		int i = 1;
 		while(ptr != NULL){
-			printf("[%d] %d %s", i, ptr->pid, getStatus(ptr->status));
+
+			printf("[%d] %d %s\n", i, ptr->pid, getStatus(ptr->status));                // CHange how we number this later
+
             int j = 0;
             while(ptr->command[j][0] != '\0'){
                 printf("%s ", ptr->command[j]);
@@ -269,25 +286,12 @@ void executeChildProcess(char* args, char** argsList, job** jobList) {
                 printf("%s: command not found\n", args);
             }
         } else if (args[0] != '\0') {
-            //printf("%s %s\n", args, foundPath);
-            // pid_t pid;
-				execv(foundPath, argsList);
-                job* newJob = malloc(sizeof(job));
-                // newJob->pid = pid;
-                newJob->status = 1;
-                newJob->command = argsList;
-                if(jobList == NULL){
-                    *jobList = newJob;
-                }
-                else{
-                    job* ptr = *jobList;
-                    while(ptr->next != NULL){
-                        ptr = ptr->next;
-                    }
-                    ptr->next = newJob;
-                }
+            write(pipefd[0][1], "0", 2);
+            execv(foundPath, argsList);
         }
     }
+    write(pipefd[0][1], "1", 2);
+    close(pipefd[0][1]);
 }
 
 // Main
@@ -297,6 +301,8 @@ int main() {
     int i = 1;
     pid_t* pid = malloc(sizeof(pid_t));
     job* jobList = malloc(sizeof(job));
+    jobList->status = 0;
+    int* pipefd = malloc(2 * sizeof(int));                          // Consider Errors later
     while(!feof(stdin)) {
         printf("> ");
         int length = 0;
@@ -309,14 +315,43 @@ int main() {
             bg = background(args, length);
         }
 
-        // Forks to run the program
+        // Forks to run the program and print program information, Also consider if people use commands incorrectly
+        pipe(pipefd);
         if ((tempPid = fork()) == 0) {
-            // printf("%s", args[0]);
-            executeChildProcess(args[0], args, &jobList);
+            executeChildProcess(args[0], args, &jobList, &pipefd);
             exit(status);
-            pid[i-1] = tempPid;   
+        } else {
+            close(pipefd[1]);              /* Closing write. */
+            char* createdProcess = malloc(1);
+            read(pipefd[0], createdProcess, 1);
+            if (!strcmp(createdProcess, "0")) {
+                job* newJob = malloc(sizeof(job));
+                newJob->status = 1;
+                newJob->command = args;                     // Need to find a way to concatenate all the strings
+                newJob->next = NULL;
+                newJob->pid = tempPid;
+                i = 1;
+                if (jobList->pid == 0) {
+                    printf("[%d] %d %s %s\n", i, newJob->pid, getStatus(newJob->status), newJob->command[0]);
+                    newJob->next = jobList;
+                    jobList = newJob;
+                }
+                else {
+                    job* ptr = jobList;
+                    i++;
+                    while(ptr->next->pid != 0){
+                        ptr = ptr->next;
+                        i++;
+                    }
+                    newJob->next = ptr->next;
+                    ptr->next = newJob;
+                    printf("[%d] %d %s %s\n", i, newJob->pid, getStatus(newJob->status), newJob->command[0]);
+                }
+            }
+
+            close(pipefd[0]);              /* Close unused read end */
         }
-        
+
         // Displays BG process Created
         if (!bg) {
             waitpid(tempPid, &status, 0);
@@ -328,8 +363,9 @@ int main() {
         i++;
         pid = realloc(pid, i * sizeof(pid_t));
         if (feof(stdin)) {
-            executeChildProcess("exit", args, &jobList);
+            executeChildProcess("exit", args, &jobList, &pipefd);
         }
+        // free(pipefd);
     }    
     return 0;
 }
