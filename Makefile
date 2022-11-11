@@ -1,5 +1,5 @@
 OUTPUT = leak
-CFLAGS = -g -Wall -Werror -std=c99 -fsanitize=address
+CFLAGS = -g -Wall -Werror -fsanitize=address
 LFLAGS = -lm
 
 %: %.c %.h
