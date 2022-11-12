@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,11 +18,13 @@ struct dirent* dir;
 typedef struct job job;
 struct job{
 	pid_t pid;
+    int jobID;
 	int status; //1 for Running, 2 for Stopped, 3 for Terminated
 	char** command;
     int commandLength;
 	job* next;
 };
+
 
 // Repeatedly handles Ctrl+Z and Ctrl+C Inputs
     // We will have to update the functions so they will be able to terminate
@@ -29,17 +32,30 @@ struct job{
 void sigHandler(int signum) {
     signal(SIGINT, sigHandler);
     signal(SIGTSTP, sigHandler);
+	signal(SIGCHLD, sigHandler);
+
+	sigset_t mask, prev;
+	sigfillset(&mask);
+
+	pid_t pid;
 
     switch (signum) {
         //SIGINT = Case 2
-        case 2:
+        case SIGINT:
             // Method to send SIGINT to all Forground jobs and its child processes
             break;
         //SIGTSTP = Case 20;
-        case 20:
+        case SIGTSTP:
             // Implement method to send SIGTSTP to all forgound jobs and its child
             // processes.
             break;
+		case SIGCHLD:
+			while ((pid = waitpid(-1, NULL, 0)) > 0){
+				sigprocmask(SIG_BLOCK, &mask, &prev);
+                //Could remove process from list right here??
+				sigprocmask(SIG_SETMASK, &prev, NULL);
+			}
+			break;
         default:
             break;
         
@@ -113,6 +129,8 @@ int background(char** args, int length) {
     return 0;
 }
 
+
+
 //Status Key
 char* getStatus(int key){
 	switch (key){
@@ -131,8 +149,12 @@ char* getStatus(int key){
 
 // Main
 int main() {
+	sigset_t mask_all, mask, prev;
+	sigemptyset(&mask);
+    sigaddset(&mask, SIGCHLD);
     signal(SIGINT, sigHandler);
     signal(SIGTSTP, sigHandler);
+	signal(SIGCHLD, sigHandler);
     // int i = 1;
     // pid_t* pid = malloc(sizeof(pid_t));
     job* jobList = malloc(sizeof(job));
@@ -219,7 +241,11 @@ int main() {
                 // exit: Exit the shell. The shell should also exit if the user hits ctrl-d on
                 //       on an empty input line. When the shell exist, it should first send SIGHUP
                 //       followed by SIGCONT to any stopped jobs, and SIGHUP to any running jobs.
-                
+				for (int i = 0; i < length; i++) {
+                    free(args[i]);
+                }                
+                free(args);
+                exit(0);
                 return 0;
             } else if (!strcmp(args[0], "fg")) {
                 // fg <jobID>L Run a suspended or background job in the foreground
@@ -281,13 +307,37 @@ int main() {
                         args[0] = malloc((sizeof(path) + 4) * sizeof(char));
                         strcpy(args[0], path);
                         free(path);
+						sigprocmask(SIG_BLOCK, &mask, &prev);
                         if (!(tempPid = fork())) {
+							sigprocmask(SIG_SETMASK, &prev, NULL);
                             execv(args[0], args);
                             exit(status);
                         }
                         else {
-                            int status;
-                            waitpid(tempPid, &status, 0);
+                            //int status;
+							sigprocmask(SIG_BLOCK, &mask_all, NULL);
+							job* newJob = malloc(sizeof(job));
+                            newJob->status = 1;
+                            newJob->command = args;                     // Need to find a way to concatenate all the strings
+                            newJob->next = NULL;
+                            newJob->pid = tempPid;
+                            newJob->commandLength = length;
+                            if (jobList->status == 0) {
+                                newJob->next = jobList;
+                                newJob->jobID = 1;
+                                jobList = newJob;
+                            }
+                            else {
+                                job* ptr = jobList;
+                                while (ptr->next->status != 0){
+                                    ptr = ptr->next;
+                                }
+                                newJob->next = ptr->next;
+                                newJob->jobID = ptr->jobID++;
+                                ptr->next = newJob;
+                            }
+							sigprocmask(SIG_SETMASK, &prev, NULL);
+                            //waitpid(tempPid, &status, 0);
                         }
                         // else {
 
@@ -295,28 +345,6 @@ int main() {
                         //     // I THINK JOB STUFF GOES HERE
                         //     // PUT JOB STUFF HERE
                         //     // AND ALSO WHATEVER ELSE YOU WANT
-                            
-                        //     job* newJob = malloc(sizeof(job));
-                        //     newJob->status = 1;
-                        //     newJob->command = args;                     // Need to find a way to concatenate all the strings
-                        //     newJob->next = NULL;
-                        //     newJob->pid = tempPid;
-                        //     newJob->commandLength = length;
-                        //     int i = 1;
-                        //     if (jobList->status == 0) {
-                        //         newJob->next = jobList;
-                        //         jobList = newJob;
-                        //     }
-                        //     else {
-                        //         job* ptr = jobList;
-                        //         i++;
-                        //         while (ptr->next->status != 0){
-                        //             ptr = ptr->next;
-                        //             i++;
-                        //         }
-                        //         newJob->next = ptr->next;
-                        //         ptr->next = newJob;
-                        //     }
 
                         //     free(path);
                         //     if (!bg) {
