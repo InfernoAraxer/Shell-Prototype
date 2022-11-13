@@ -20,7 +20,7 @@ struct job{
 	pid_t pid;
     int jobID;
 	int status; //1 for Running, 2 for Stopped, 3 for Terminated
-	char** command;
+	char* command;
     int commandLength;
 	job* next;
 };
@@ -179,6 +179,10 @@ int main() {
         if (!feof(stdin)) {
             args = readInput(&length);
         }
+        if (feof(stdin)) {
+            free(args);
+            break;
+        }
         args = realloc(args, (length + 1) * sizeof(char*));
         args[length] = NULL;
 
@@ -260,10 +264,7 @@ int main() {
                     job* temp = jobList; 
                     int i = 1;
                     while (temp->status != 0) {
-                        printf("[%d] %d %s %s", i, temp->pid, getStatus(temp->status), temp->command[0]);
-                        for (int i = 1; i < temp->commandLength; i++) {
-                            printf("%s ", temp->command[i]);
-                        }
+                        printf("[%d] %d %s %s", i, temp->pid, getStatus(temp->status), temp->command);
                         printf("\n");
                         temp = temp->next;
                         i++;
@@ -304,7 +305,7 @@ int main() {
                 if (!exists) {
                     if (S_ISREG(buf.st_mode)) {
                         free(args[0]);
-                        args[0] = malloc((sizeof(path) + 4) * sizeof(char));
+                        args[0] = malloc((strlen(path) + 4) * sizeof(char));
                         strcpy(args[0], path);
                         free(path);
 						sigprocmask(SIG_BLOCK, &mask, &prev);
@@ -318,10 +319,16 @@ int main() {
 							sigprocmask(SIG_BLOCK, &mask_all, NULL);
 							job* newJob = malloc(sizeof(job));
                             newJob->status = 1;
-                            newJob->command = args;                     // Need to find a way to concatenate all the strings
+                            char* command = malloc((strlen(args[0]) + 4) * sizeof(char));
+                            strcpy(command, args[0]);
+                            for(int i = 1; i < length; i++) {
+                                strcat(command, " ");
+                                command = realloc(command, (strlen(command) + strlen(args[i]) + 2) * sizeof(char));
+                                strcat(command, args[i]);
+                            }
+                            newJob->command = command;                     // Need to find a way to concatenate all the strings
                             newJob->next = NULL;
                             newJob->pid = tempPid;
-                            newJob->commandLength = length;
                             if (jobList->status == 0) {
                                 newJob->next = jobList;
                                 newJob->jobID = 1;
@@ -337,7 +344,7 @@ int main() {
                                 ptr->next = newJob;
                             }
 							sigprocmask(SIG_SETMASK, &prev, NULL);
-                            //waitpid(tempPid, &status, 0);
+                            waitpid(tempPid, &status, 0);
                         }
                         // else {
 
@@ -376,18 +383,14 @@ int main() {
                 }
             }
         }
-                
+        for(int i = 0; i < length + 1; i++) {
+            free(args[i]);
+        }
+        free(args);
     }
-    for(int i = 0; i < length + 1; i++) {
-        free(args[i]);
-    }
-    free(args);
     job* temp = jobList;
     while (jobList->status != 0) {
         temp = temp->next;
-        for (int i = 0; i < jobList->commandLength; i++) {
-            free(jobList->command[i]);
-        }
         free(jobList->command);
         free(jobList);
         jobList = temp;
