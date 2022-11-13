@@ -21,23 +21,33 @@ struct job{
     int jobID;
 	int status; //1 for Running, 2 for Stopped, 3 for Terminated
 	char* command;
-    int commandLength;
+    int ground;
 	job* next;
 };
 
+volatile sig_atomic_t chldflag = 0;
+
+void Signal(int signum, void *handler)
+{
+    struct sigaction action, old_action;
+
+    action.sa_handler = handler;
+    sigemptyset(&action.sa_mask); /* Block sigs of type being handled */
+    action.sa_flags = SA_RESTART; /* Restart syscalls if possible */
+
+    if (sigaction(signum, &action, &old_action) < 0)
+        printf("Signal error");
+}
 
 // Repeatedly handles Ctrl+Z and Ctrl+C Inputs
     // We will have to update the functions so they will be able to terminate
     // jobs that are in the fore/background.
 void sigHandler(int signum) {
-    signal(SIGINT, sigHandler);
-    signal(SIGTSTP, sigHandler);
-	signal(SIGCHLD, sigHandler);
 
 	sigset_t mask, prev;
 	sigfillset(&mask);
 
-	pid_t pid;
+    sigprocmask(SIG_BLOCK, &mask, &prev);
 
     switch (signum) {
         //SIGINT = Case 2
@@ -50,16 +60,13 @@ void sigHandler(int signum) {
             // processes.
             break;
 		case SIGCHLD:
-			while ((pid = waitpid(-1, NULL, 0)) > 0){
-				sigprocmask(SIG_BLOCK, &mask, &prev);
-                //Could remove process from list right here??
-				sigprocmask(SIG_SETMASK, &prev, NULL);
-			}
+            chldflag = 1;
 			break;
         default:
             break;
         
     }
+    sigprocmask(SIG_SETMASK, &prev, NULL);
     // return 0;
 }
 
@@ -149,12 +156,12 @@ char* getStatus(int key){
 
 // Main
 int main() {
-	sigset_t mask_all, mask, prev;
+	sigset_t mask, prev;
 	sigemptyset(&mask);
     sigaddset(&mask, SIGCHLD);
-    signal(SIGINT, sigHandler);
-    signal(SIGTSTP, sigHandler);
-	signal(SIGCHLD, sigHandler);
+    Signal(SIGINT, sigHandler);
+    Signal(SIGTSTP, sigHandler);
+	Signal(SIGCHLD, sigHandler);
     // int i = 1;
     // pid_t* pid = malloc(sizeof(pid_t));
     job* jobList = malloc(sizeof(job));
@@ -166,6 +173,7 @@ int main() {
     // int bg = 0;
     char** args;
     while(!feof(stdin)) {
+        sigprocmask(SIG_BLOCK, &mask, &prev);
         printf("> ");
         length = 0;
         status = 0;
@@ -189,6 +197,7 @@ int main() {
         //if empty
         if (length == 0 && args[0] == NULL) {
             free(args[0]);
+            free(args);
             continue;
         }
 
@@ -235,12 +244,6 @@ int main() {
                     }
                     free(path);
                 }
-
-                
-                for (int i = 0; i < length; i++) {
-                    free(args[i]);
-                }                
-                free(args);
             } else if (!strcmp(args[0], "exit")) {
                 // exit: Exit the shell. The shell should also exit if the user hits ctrl-d on
                 //       on an empty input line. When the shell exist, it should first send SIGHUP
@@ -249,13 +252,10 @@ int main() {
                     free(args[i]);
                 }                
                 free(args);
-                exit(0);
-                return 0;
+                break;
             } else if (!strcmp(args[0], "fg")) {
                 // fg <jobID>L Run a suspended or background job in the foreground
 
-                free(args[0]);
-                free(args);
             } else if (!strcmp(args[0], "jobs")) {
                 // jobs: List current jobs, including their jobID, processID, current status, and
                 //       command. If no jobs exist, this should print nothing.
@@ -270,14 +270,10 @@ int main() {
                         i++;
                     }
                 }
-                free(args[0]);
-                free(args);
 
             } else if (!strcmp(args[0], "kill")) {
                 // kill <jobID>: Send SIGTERM to the given job.
                 
-                free(args[0]);
-                free(args);
             } else {
                 //this is where the stuff happens
                 //basically im putting working directory and other directories into path to see if it exists
@@ -308,7 +304,6 @@ int main() {
                         args[0] = malloc((strlen(path) + 4) * sizeof(char));
                         strcpy(args[0], path);
                         free(path);
-						sigprocmask(SIG_BLOCK, &mask, &prev);
                         if (!(tempPid = fork())) {
 							sigprocmask(SIG_SETMASK, &prev, NULL);
                             execv(args[0], args);
@@ -316,7 +311,6 @@ int main() {
                         }
                         else {
                             //int status;
-							sigprocmask(SIG_BLOCK, &mask_all, NULL);
 							job* newJob = malloc(sizeof(job));
                             newJob->status = 1;
                             char* command = malloc((strlen(args[0]) + 4) * sizeof(char));
@@ -343,7 +337,6 @@ int main() {
                                 newJob->jobID = ptr->jobID++;
                                 ptr->next = newJob;
                             }
-							sigprocmask(SIG_SETMASK, &prev, NULL);
                             waitpid(tempPid, &status, 0);
                         }
                         // else {
@@ -387,6 +380,41 @@ int main() {
             free(args[i]);
         }
         free(args);
+        sigprocmask(SIG_SETMASK, &prev, NULL);
+        
+        //
+        // handling sigchld now
+        // but need to delete the required jobs in joblist
+        //
+        if (chldflag) {
+            job* ptr = jobList;
+            int waitstatus;
+            while(ptr) {
+                waitpid(ptr->pid, &waitstatus, WNOHANG);
+                if (errno == 10 || WIFEXITED(waitstatus)) {
+                    if (jobList->next) {
+                        jobList = jobList->next;
+                    } else {
+
+                    }
+                    free(ptr->command);
+                    free(ptr);
+                }
+            }
+            while(ptr->next->status != 0) {
+                waitpid(ptr->next->pid, &waitstatus, WNOHANG);
+                if (errno == 10 || WIFEXITED(waitstatus)) {
+                    job* temp = ptr->next;
+                    if (temp->next) {
+                        ptr->next = temp->next;
+                    }
+                    free(temp->command);
+                    free(temp);
+                }
+                ptr = ptr->next;
+                errno = 0;
+            }
+        }
     }
     job* temp = jobList;
     while (jobList->status != 0) {
