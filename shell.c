@@ -392,27 +392,11 @@ int main() {
             while(ptr) {
                 waitpid(ptr->pid, &waitstatus, WNOHANG);
                 if (errno == 10 || WIFEXITED(waitstatus)) {
-                    if (jobList->next) {
-                        jobList = jobList->next;
-                    } else {
+                    
+                    //deleting job from joblist
+                    //delete the job at ptr here
 
-                    }
-                    free(ptr->command);
-                    free(ptr);
                 }
-            }
-            while(ptr->next->status != 0) {
-                waitpid(ptr->next->pid, &waitstatus, WNOHANG);
-                if (errno == 10 || WIFEXITED(waitstatus)) {
-                    job* temp = ptr->next;
-                    if (temp->next) {
-                        ptr->next = temp->next;
-                    }
-                    free(temp->command);
-                    free(temp);
-                }
-                ptr = ptr->next;
-                errno = 0;
             }
         }
     }
