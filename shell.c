@@ -44,6 +44,7 @@ void Signal(int signum, void *handler)
     // jobs that are in the fore/background.
 void sigHandler(int signum) {
 
+	int errtemp = errno;
 	sigset_t mask, prev;
 	sigfillset(&mask);
 
@@ -60,6 +61,7 @@ void sigHandler(int signum) {
             // processes.
             break;
 		case SIGCHLD:
+			errno = errtemp;
             chldflag = 1;
 			break;
         default:
@@ -130,7 +132,9 @@ char** readInput(int* length) {
 
 int background(char** args, int length) {
     if (args[length - 1][0] == '&') {
-        args[length - 1] = NULL;
+        free(args[length - 1]);
+		args[length - 1] = NULL;
+		free(args[length]);
         return 1;
     }
     return 0;
@@ -165,6 +169,7 @@ int main() {
     // int i = 1;
     // pid_t* pid = malloc(sizeof(pid_t));
     job* jobList = malloc(sizeof(job));
+	jobList->pid = -100;
     jobList->status = 0;
     char* home = getenv("HOME");
     setenv("PWD", home, 1);
@@ -173,7 +178,6 @@ int main() {
     // int bg = 0;
     char** args;
     while(!feof(stdin)) {
-        sigprocmask(SIG_BLOCK, &mask, &prev);
         printf("> ");
         length = 0;
         status = 0;
@@ -187,10 +191,12 @@ int main() {
         if (!feof(stdin)) {
             args = readInput(&length);
         }
+
         if (feof(stdin)) {
             free(args);
             break;
         }
+
         args = realloc(args, (length + 1) * sizeof(char*));
         args[length] = NULL;
 
@@ -200,6 +206,39 @@ int main() {
             free(args);
             continue;
         }
+
+        if (chldflag) {
+            job* ptr = jobList;
+			job* prev = NULL;
+            while(ptr->status > 0) {
+				int waitstatus = 0;
+				waitpid(ptr->pid, &waitstatus, WNOHANG);
+				if (WIFEXITED(waitstatus)) {
+					printf("%d\n", ptr->pid);
+					fflush(stdout);
+					if(!prev){
+						jobList = ptr->next;
+						ptr->status = 3;
+						free(ptr->command);
+						free(ptr);
+						ptr = jobList;
+					}
+					else{
+						prev->next = ptr->next;
+						free(ptr->command);
+						free(ptr);
+						ptr = prev;
+					}
+				}
+				errno = 0;
+				prev = ptr;
+				if(ptr->status > 0){
+					ptr = ptr->next;
+				}
+            }
+			chldflag = 0;
+		}
+
 
         // Determines if Process will run in the background
         if (!feof(stdin)) {
@@ -300,12 +339,16 @@ int main() {
                 }
                 if (!exists) {
                     if (S_ISREG(buf.st_mode)) {
+						int bg = background(args, length);
+						if (bg) {
+							length--;
+						}
                         free(args[0]);
                         args[0] = malloc((strlen(path) + 4) * sizeof(char));
                         strcpy(args[0], path);
                         free(path);
                         if (!(tempPid = fork())) {
-							sigprocmask(SIG_SETMASK, &prev, NULL);
+							sigprocmask(SIG_BLOCK, &mask, &prev);
                             execv(args[0], args);
                             exit(status);
                         }
@@ -337,7 +380,9 @@ int main() {
                                 newJob->jobID = ptr->jobID++;
                                 ptr->next = newJob;
                             }
-                            waitpid(tempPid, &status, 0);
+							if (!bg) {
+                            	waitpid(tempPid, &status, 0);
+							}
                         }
                         // else {
 
@@ -380,25 +425,11 @@ int main() {
             free(args[i]);
         }
         free(args);
-        sigprocmask(SIG_SETMASK, &prev, NULL);
         
         //
         // handling sigchld now
         // but need to delete the required jobs in joblist
         //
-        if (chldflag) {
-            job* ptr = jobList;
-            int waitstatus;
-            while(ptr) {
-                waitpid(ptr->pid, &waitstatus, WNOHANG);
-                if (errno == 10 || WIFEXITED(waitstatus)) {
-                    
-                    //deleting job from joblist
-                    //delete the job at ptr here
-
-                }
-            }
-        }
     }
     job* temp = jobList;
     while (jobList->status != 0) {
