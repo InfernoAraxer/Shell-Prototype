@@ -169,7 +169,6 @@ int main() {
     // int i = 1;
     // pid_t* pid = malloc(sizeof(pid_t));
     job* jobList = malloc(sizeof(job));
-	jobList->pid = -100;
     jobList->status = 0;
     char* home = getenv("HOME");
     setenv("PWD", home, 1);
@@ -298,13 +297,11 @@ int main() {
                 //       command. If no jobs exist, this should print nothing.
                 
                 if (jobList->status != 0) {
-                    job* temp = jobList; 
-                    int i = 1;
-                    while (temp->status != 0) {
-                        printf("[%d] %d %s %s", i, temp->pid, getStatus(temp->status), temp->command);
+                    job* ptr = jobList; 
+                    while (ptr->status != 0) {
+                        printf("[%d] %d %s %s", ptr->jobID, ptr->pid, getStatus(ptr->status), ptr->command);
                         printf("\n");
-                        temp = temp->next;
-                        i++;
+                        ptr = ptr->next;
                     }
                 }
 
@@ -374,7 +371,7 @@ int main() {
                                     ptr = ptr->next;
                                 }
                                 newJob->next = ptr->next;
-                                newJob->jobID = ptr->jobID++;
+                                newJob->jobID = (ptr->jobID) + 1;
                                 ptr->next = newJob;
                             }
 							if (bg) {
@@ -427,7 +424,7 @@ int main() {
         
         //
         // handling sigchld now
-        // but need to delete the required jobs in joblist
+        // but need to delete the jobs in joblist
         //
     }
     job* temp = jobList;
