@@ -211,11 +211,9 @@ int main() {
             job* ptr = jobList;
 			job* prev = NULL;
             while(ptr->status > 0) {
-				int waitstatus = 0;
+				int waitstatus = 1;
 				waitpid(ptr->pid, &waitstatus, WNOHANG);
 				if (WIFEXITED(waitstatus)) {
-					printf("%d\n", ptr->pid);
-					fflush(stdout);
 					if(!prev){
 						jobList = ptr->next;
 						ptr->status = 3;
@@ -370,8 +368,7 @@ int main() {
                                 newJob->next = jobList;
                                 newJob->jobID = 1;
                                 jobList = newJob;
-                            }
-                            else {
+                            } else {
                                 job* ptr = jobList;
                                 while (ptr->next->status != 0){
                                     ptr = ptr->next;
@@ -380,9 +377,11 @@ int main() {
                                 newJob->jobID = ptr->jobID++;
                                 ptr->next = newJob;
                             }
-							if (!bg) {
+							if (bg) {
+                                printf("[%d] %d\n", newJob->jobID, newJob->pid);
+                            } else {
                             	waitpid(tempPid, &status, 0);
-							}
+                            }
                         }
                         // else {
 
