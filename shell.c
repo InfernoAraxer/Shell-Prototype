@@ -212,6 +212,7 @@ int main() {
             while(ptr->status > 0) {
 				int waitstatus = 1;
 				waitpid(ptr->pid, &waitstatus, WNOHANG);
+                // printf("%d", WIFEXITED(waitstatus));
 				if (errno == 10 || WIFEXITED(waitstatus)) {
 					if(!prev){
 						jobList = ptr->next;
