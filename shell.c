@@ -47,10 +47,14 @@ void sigHandler(int signum) {
 	int errtemp = errno;
 	sigset_t mask, prev;
 	sigfillset(&mask);
-
+    Signal(SIGTERM, sigHandler);
     sigprocmask(SIG_BLOCK, &mask, &prev);
 
     switch (signum) {
+        //SIGTERM = Case 
+        case SIGTERM:
+            _Exit(0);
+
         //SIGINT = Case 2
         case SIGINT:
             // Method to send SIGINT to all Forground jobs and its child processes
@@ -160,12 +164,17 @@ char* getStatus(int key){
 
 // Main
 int main() {
-	sigset_t mask, prev;
-	sigemptyset(&mask);
-    sigaddset(&mask, SIGCHLD);
+	sigset_t childmask, parentmask, prev;
+	sigemptyset(&childmask);
+    sigemptyset(&parentmask);
+    sigaddset(&parentmask, SIGTERM);
+    sigaddset(&childmask, SIGCHLD);
+
     Signal(SIGINT, sigHandler);
     Signal(SIGTSTP, sigHandler);
 	Signal(SIGCHLD, sigHandler);
+    Signal(SIGTERM, sigHandler);
+    sigprocmask(SIG_BLOCK, &parentmask, &prev);
     // int i = 1;
     // pid_t* pid = malloc(sizeof(pid_t));
     job* jobList = malloc(sizeof(job));
@@ -211,9 +220,9 @@ int main() {
 			job* prev = NULL;
             while(ptr->status > 0) {
 				int waitstatus = 1;
-				waitpid(ptr->pid, &waitstatus, WNOHANG);
-                // printf("%d", WIFEXITED(waitstatus));
-				if (errno == 10 || WIFEXITED(waitstatus)) {
+				errno = 0;
+                waitpid(ptr->pid, &waitstatus, WNOHANG);
+				if (errno == 10 || WIFEXITED(waitstatus) || waitstatus == 15) {
 					if(!prev){
 						jobList = ptr->next;
 						ptr->status = 3;
@@ -228,7 +237,6 @@ int main() {
 						ptr = prev;
 					}
 				}
-				errno = 0;
 				prev = ptr;
 				if(ptr->status > 0){
 					ptr = ptr->next;
@@ -323,8 +331,14 @@ int main() {
                 }
 
             } else if (!strcmp(args[0], "kill")) {
-                // kill <jobID>: Send SIGTERM to the given job.
-                
+                job* ptr = jobList;
+                while (ptr->status > 0) { //bruh
+                    if (ptr->jobID == atoi(args[1])) {                // Second argument
+                        kill(ptr->pid, SIGTERM);
+                    }
+                    ptr = ptr->next;
+                }
+
             } else {
                 //this is where the stuff happens
                 //basically im putting working directory and other directories into path to see if it exists
@@ -360,7 +374,10 @@ int main() {
                         strcpy(args[0], path);
                         free(path);
                         if (!(tempPid = fork())) {
-							sigprocmask(SIG_BLOCK, &mask, &prev);
+
+                            //execv
+                            sigprocmask(SIG_UNBLOCK, &parentmask, NULL);
+							sigprocmask(SIG_BLOCK, &childmask, NULL);
                             execv(args[0], args);
                             exit(status);
                         }
