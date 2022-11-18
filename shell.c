@@ -246,6 +246,22 @@ int main() {
 
                 free(args[0]);
                 free(args);
+            } else if (!strcmp(args[0], "suspend")) {
+                job* ptr = jobList;
+                bool suspended = false;
+                while (ptr->status > 0) {
+                    if (ptr->jobID == args[1][0]) {                // Second argument
+                        kill(ptr->jobID, SIGSTOP);
+                        ptr->status = 2;
+                        suspended = true;
+                    }
+                    ptr = ptr->next;
+                }
+                if (!suspended) {
+                    printf("Task does not exist to be suspended.");         // Update error message later
+                }
+                free(args[0]);
+                free(args);
             } else if (!strcmp(args[0], "cd")) {
                 // cd [path]: Changes current directory to the given absolute or relative path. 
                 //           If no path is give, use the value of environment variable HOME.
