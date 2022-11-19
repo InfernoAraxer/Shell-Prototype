@@ -55,15 +55,6 @@ void sigHandler(int signum) {
         case SIGTERM:
             _Exit(0);
 
-        //SIGINT = Case 2
-        case SIGINT:
-            // Method to send SIGINT to all Forground jobs and its child processes
-            break;
-        //SIGTSTP = Case 20;
-        case SIGTSTP:
-            // Implement method to send SIGTSTP to all forgound jobs and its child
-            // processes.
-            break;
 		case SIGCHLD:
 			errno = errtemp;
             chldflag = 1;
@@ -167,13 +158,12 @@ int main() {
 	sigset_t childmask, parentmask, prev;
 	sigemptyset(&childmask);
     sigemptyset(&parentmask);
+    sigaddset(&parentmask, SIGINT);
     sigaddset(&parentmask, SIGTERM);
+    sigaddset(&parentmask, SIGTSTP);
     sigaddset(&childmask, SIGCHLD);
 
-    Signal(SIGINT, sigHandler);
-    Signal(SIGTSTP, sigHandler);
 	Signal(SIGCHLD, sigHandler);
-    Signal(SIGTERM, sigHandler);
     sigprocmask(SIG_BLOCK, &parentmask, &prev);
     // int i = 1;
     // pid_t* pid = malloc(sizeof(pid_t));
@@ -216,6 +206,7 @@ int main() {
         }
 
         if (chldflag) {
+            fflush(stdout);
             job* ptr = jobList;
 			job* prev = NULL;
             while(ptr->status > 0) {
@@ -251,25 +242,29 @@ int main() {
             // bg = background(args, length);
             if (!strcmp(args[0], "bg")) {
                 // Input bg <jobID>: Run a suspended job in the background
-
-                free(args[0]);
-                free(args);
-            } else if (!strcmp(args[0], "suspend")) {
-                job* ptr = jobList;
-                bool suspended = false;
-                while (ptr->status > 0) {
-                    if (ptr->jobID == args[1][0]) {                // Second argument
-                        kill(ptr->jobID, SIGSTOP);
-                        ptr->status = 2;
-                        suspended = true;
+                if (args[1][0] != '%') {
+                    printf("Invalid input");
+                }
+                else {
+                    char* tempStr = malloc(strlen(args[1]) * sizeof(char));
+                    for(int i = 1; i < strlen(args[1]); i++) {
+                        tempStr[i-1] = args[1][i];
                     }
-                    ptr = ptr->next;
+                    tempStr[strlen(args[1]) - 1] = '\0';
+                    strcpy(args[1], tempStr);
+                    free(tempStr);
+                    if (jobList->status != 0) {
+                        job* ptr = jobList; 
+                        while (ptr->status != 0) {
+                            if (ptr->jobID == atoi(args[1])) {
+                                kill(ptr->pid, SIGCONT);
+                                ptr->status = 1;
+                            }
+                            ptr = ptr->next;
+                        }
+                    }
                 }
-                if (!suspended) {
-                    printf("Task does not exist to be suspended.");         // Update error message later
-                }
-                free(args[0]);
-                free(args);
+
             } else if (!strcmp(args[0], "cd")) {
                 // cd [path]: Changes current directory to the given absolute or relative path. 
                 //           If no path is give, use the value of environment variable HOME.
@@ -310,29 +305,65 @@ int main() {
                 //       on an empty input line. When the shell exist, it should first send SIGHUP
                 //       followed by SIGCONT to any stopped jobs, and SIGHUP to any running jobs.
 
+                if (jobList->status != 0) {
+                    job* ptr = jobList; 
+                    while (ptr->status != 0) {
+                        kill(ptr->pid, SIGHUP);
+                        if (ptr->status == 2) {
+                            kill(ptr->pid, SIGCONT);
+                        }
+                        ptr = ptr->next;
+                    }
+                }
 
 				for (int i = 0; i < length; i++) {
                     free(args[i]);
                 }                
                 free(args);
-                exit(0);
+                break;
         
             } else if (!strcmp(args[0], "fg")) {
                 // fg <jobID>L Run a suspended or background job in the foreground
-                if (jobList->status != 0) {
+                if (args[1][0] != '%') {
+                    printf("Invalid input");
+                }
+                else {
+                    char* tempStr = malloc(strlen(args[1]) * sizeof(char));
+                    for(int i = 1; i < strlen(args[1]); i++) {
+                        tempStr[i-1] = args[1][i];
+                    }
+                    tempStr[strlen(args[1]) - 1] = '\0';
+                    strcpy(args[1], tempStr);
+                    free(tempStr);
+                    if (jobList->status != 0) {
                     job* ptr = jobList; 
-                    while (ptr->status != 0) {
-                        if (ptr->jobID == atoi(args[1])) {
-                            int status = 0;
-                            if (ptr->status == 2) {
-                                kill(ptr->pid, SIGCONT);
-                                waitpid(ptr->pid, &status, 0);
+                        while (ptr->status != 0) {
+                            if (ptr->jobID == atoi(args[1])) {
+                                int status = 0;
+                                if (ptr->status == 2) {
+                                    kill(ptr->pid, SIGCONT);
+                                    waitpid(ptr->pid, &status, WUNTRACED);
+                                    if (WIFSTOPPED(status)) {
+                                        ptr->status = 2;
+                                        printf("\n");
+                                    }
+                                    if (status == 2) { 
+                                        printf("\n[%d] %d terminated by signal 2\n", ptr->jobID, ptr->pid);
+                                    }
+                                }
+                                else {
+                                    waitpid(ptr->pid, &status, WUNTRACED);
+                                    if (WIFSTOPPED(status)) {
+                                        ptr->status = 2;
+                                        printf("\n");
+                                    }
+                                    if (status == 2) { 
+                                        printf("\n[%d] %d terminated by signal 2\n", ptr->jobID, ptr->pid);
+                                    }
+                                }
                             }
-                            else {
-                                waitpid(ptr->pid, &status, 0);
-                            }
+                            ptr = ptr->next;
                         }
-                        ptr = ptr->next;
                     }
                 }
 
@@ -343,19 +374,37 @@ int main() {
                 if (jobList->status != 0) {
                     job* ptr = jobList; 
                     while (ptr->status != 0) {
-                        printf("[%d] %d %s %s", ptr->jobID, ptr->pid, getStatus(ptr->status), ptr->command);
+                        if (ptr->status == 1) {
+                            printf("[%d] %d %s %s &", ptr->jobID, ptr->pid, getStatus(ptr->status), ptr->command);
+                        }
+                        else {
+                            printf("[%d] %d %s %s", ptr->jobID, ptr->pid, getStatus(ptr->status), ptr->command);
+                        }
                         printf("\n");
                         ptr = ptr->next;
                     }
                 }
 
             } else if (!strcmp(args[0], "kill")) {
-                job* ptr = jobList;
-                while (ptr->status > 0) { //bruh
-                    if (ptr->jobID == atoi(args[1])) {                // Second argument
-                        kill(ptr->pid, SIGTERM);
+                if (args[1][0] != '%') {
+                    printf("Invalid input");
+                }
+                else {
+                    char* tempStr = malloc(strlen(args[1]) * sizeof(char));
+                    for(int i = 1; i < strlen(args[1]); i++) {
+                        tempStr[i-1] = args[1][i];
                     }
+                    tempStr[strlen(args[1]) - 1] = '\0';
+                    strcpy(args[1], tempStr);
+                    free(tempStr);
+                    job* ptr = jobList;
+                    while (ptr->status > 0) { 
+                        if (ptr->jobID == atoi(args[1])) {
+                            kill(ptr->pid, SIGTERM);
+                            printf("[%d] %d terminated by signal 15\n", ptr->jobID, ptr->pid);
+                        }
                     ptr = ptr->next;
+                    }
                 }
 
             } else {
@@ -430,7 +479,14 @@ int main() {
 							if (bg) {
                                 printf("[%d] %d\n", newJob->jobID, newJob->pid);
                             } else {
-                            	waitpid(tempPid, &status, 0);
+                            	waitpid(tempPid, &status, WUNTRACED);
+                                if (WIFSTOPPED(status)) {
+                                    newJob->status = 2;
+                                    printf("\n");
+                                }
+                                if (status == 2) { 
+                                    printf("\n[%d] %d terminated by signal 2\n", newJob->jobID, newJob->pid);
+                                }
                             }
                         }
                         // else {
