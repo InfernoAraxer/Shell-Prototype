@@ -309,13 +309,32 @@ int main() {
                 // exit: Exit the shell. The shell should also exit if the user hits ctrl-d on
                 //       on an empty input line. When the shell exist, it should first send SIGHUP
                 //       followed by SIGCONT to any stopped jobs, and SIGHUP to any running jobs.
+
+
 				for (int i = 0; i < length; i++) {
                     free(args[i]);
                 }                
                 free(args);
-                break;
+                exit(0);
+        
             } else if (!strcmp(args[0], "fg")) {
                 // fg <jobID>L Run a suspended or background job in the foreground
+                if (jobList->status != 0) {
+                    job* ptr = jobList; 
+                    while (ptr->status != 0) {
+                        if (ptr->jobID == atoi(args[1])) {
+                            int status = 0;
+                            if (ptr->status == 2) {
+                                kill(ptr->pid, SIGCONT);
+                                waitpid(ptr->pid, &status, 0);
+                            }
+                            else {
+                                waitpid(ptr->pid, &status, 0);
+                            }
+                        }
+                        ptr = ptr->next;
+                    }
+                }
 
             } else if (!strcmp(args[0], "jobs")) {
                 // jobs: List current jobs, including their jobID, processID, current status, and
