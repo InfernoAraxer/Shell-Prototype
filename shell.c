@@ -539,6 +539,19 @@ int main() {
         // but need to delete the jobs in joblist
         //
     }
+
+    //comment this out if you want to test : VVVVV
+    if (jobList->status != 0) {
+        job* ptr = jobList; 
+        while (ptr->status != 0) {
+            kill(ptr->pid, SIGHUP);
+            if (ptr->status == 2) {
+                kill(ptr->pid, SIGCONT);
+            }
+            ptr = ptr->next;
+        }
+    }
+    //comment above ^^^^^^
     job* temp = jobList;
     while (jobList->status != 0) {
         temp = temp->next;
