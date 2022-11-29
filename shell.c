@@ -400,6 +400,9 @@ int main() {
                     job* ptr = jobList;
                     while (ptr->status > 0) { 
                         if (ptr->jobID == atoi(args[1])) {
+                            if (ptr->status == 2) {
+                                kill(ptr->pid, SIGCONT);
+                            }
                             kill(ptr->pid, SIGTERM);
                             printf("[%d] %d terminated by signal 15\n", ptr->jobID, ptr->pid);
                         }
